@@ -74,8 +74,12 @@ pub fn mutant_struct(
                 quote! {}
             };
 
-            let ignore_fields = vec!["user_id".to_owned(), "created_at".to_owned()];
-            let must_have = vec!["id".to_owned()];
+            let ignore_fields = vec![
+                "id".to_owned(),
+                "user_id".to_owned(),
+                "created_at".to_owned(),
+            ];
+            let must_have = vec![];
 
             let column_name = format_ident!("{}", ident.to_string().to_snake_case());
             if ignore_fields.contains(&column_name.to_string()) {
@@ -115,8 +119,12 @@ pub fn recursive_set_fn(fields: &[IdentTypeTuple]) -> Result<TokenStream, crate:
             let column_name = format_ident!("{}", ident.to_string().to_snake_case());
             let _column_enum_name = format_ident!("{}", ident.to_string().to_upper_camel_case());
 
-            let ignore_fields = vec!["user_id".to_owned(), "created_at".to_owned()];
-            let must_have = vec!["id".to_owned()];
+            let ignore_fields = vec![
+                "id".to_owned(),
+                "user_id".to_owned(),
+                "created_at".to_owned(),
+            ];
+            let must_have = vec![];
 
             if ignore_fields.contains(&column_name.to_string()) {
                 quote! {}
