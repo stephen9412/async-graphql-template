@@ -1,3 +1,9 @@
-# Seaography Derive
+# async-graphql-template-derive
 
-This is a library of macros that convert SeaORM entities into Async GraphQL nodes.
+## 調試
+
+要安裝 `cargo install cargo-expand`
+
+```bash
+cargo expand --lib entities::areas > expanded.rs
+```
