@@ -1,3 +1,6 @@
+// Derived from Seaography (github.com/SeaQL/seaography)
+// Modifications Copyright (c) 2025 Stephen J. Li
+
 use heck::{ToSnakeCase, ToUpperCamelCase};
 use proc_macro2::TokenStream;
 use quote::{format_ident, quote, ToTokens};
@@ -7,7 +10,7 @@ pub struct SeaOrm {
     table_name: Option<syn::Lit>,
 }
 
-pub type IdentTypeTuple = (syn::Ident, syn::Type);
+pub type IdentTypeTuple = (syn::Ident, syn::Type, bool);
 
 // TODO skip ignored fields
 pub fn filter_fn(item: syn::DataStruct, attrs: SeaOrm) -> Result<TokenStream, crate::error::Error> {
@@ -15,10 +18,8 @@ pub fn filter_fn(item: syn::DataStruct, attrs: SeaOrm) -> Result<TokenStream, cr
         .fields
         .into_iter()
         .map(|field| {
-            (
-                field.ident.unwrap(),
-                remove_optional_from_type(field.ty).unwrap(),
-            )
+            let (ty, is_option) = remove_optional_from_type_and_get_is_option(field.ty).unwrap();
+            (field.ident.unwrap(), ty, is_option)
         })
         .collect();
 
@@ -47,11 +48,10 @@ pub fn filter_struct(
 ) -> Result<TokenStream, crate::error::Error> {
     let fields: Vec<TokenStream> = fields
         .iter()
-        .map(|(ident, ty)| {
+        .map(|(ident, ty, _)| {
             let type_literal = ty.to_token_stream().to_string();
 
             let default_filters = vec![
-                "String",
                 "i8",
                 "i16",
                 "i32",
@@ -84,7 +84,11 @@ pub fn filter_struct(
                 || type_literal.starts_with("Vec")
             {
                 quote! {
-                    seaography::TypeFilter<#ty>
+                    async_graphql_template::TypeFilter<#ty>
+                }
+            } else if &type_literal.as_str() == &"String" {
+                quote! {
+                    async_graphql_template::StringFilter<#ty>
                 }
             } else {
                 let ident = format_ident!("{}EnumFilter", type_literal);
@@ -110,7 +114,7 @@ pub fn filter_struct(
     // let type_name = quote!{
     //     impl async_graphql::TypeName for Filter {
     //         fn type_name() -> ::std::borrow::Cow<'static, str> {
-    //             use seaography::heck::ToUpperCamelCase;
+    //             use async_graphql_template::heck::ToUpperCamelCase;
 
     //             let filter_name = format!("{}Filter", Entity::default().table_name().to_string().to_upper_camel_case());
 
@@ -136,9 +140,9 @@ pub fn order_by_struct(
 ) -> Result<TokenStream, crate::error::Error> {
     let fields: Vec<TokenStream> = fields
         .iter()
-        .map(|(ident, _)| {
+        .map(|(ident, _, _)| {
             quote! {
-                #ident: Option<seaography::OrderByEnum>
+                #ident: Option<async_graphql_template::OrderByEnum>
             }
         })
         .collect();
@@ -162,14 +166,14 @@ pub fn order_by_struct(
 pub fn order_by_fn(fields: &[IdentTypeTuple]) -> Result<TokenStream, crate::error::Error> {
     let fields: Vec<TokenStream> = fields
         .iter()
-        .map(|(ident, _)| {
+        .map(|(ident, _, _)| {
             let column = format_ident!("{}", ident.to_string().to_upper_camel_case());
 
             quote! {
                 let stmt = if let Some(order_by) = order_by_struct.#ident {
                     match order_by {
-                        seaography::OrderByEnum::Asc => stmt.order_by(Column::#column, sea_orm::query::Order::Asc),
-                        seaography::OrderByEnum::Desc => stmt.order_by(Column::#column, sea_orm::query::Order::Desc),
+                        async_graphql_template::OrderByEnum::Asc => stmt.order_by(Column::#column, sea_orm::query::Order::Asc),
+                        async_graphql_template::OrderByEnum::Desc => stmt.order_by(Column::#column, sea_orm::query::Order::Desc),
                     }
                 } else {
                     stmt
@@ -195,13 +199,35 @@ pub fn order_by_fn(fields: &[IdentTypeTuple]) -> Result<TokenStream, crate::erro
 pub fn recursive_filter_fn(fields: &[IdentTypeTuple]) -> Result<TokenStream, crate::error::Error> {
     let columns_filters: Vec<TokenStream> = fields
         .iter()
-        .map(|(ident, _)| {
-            let column_name = format_ident!("{}", ident.to_string().to_snake_case());
+        .map(|(ident_proc, ident_type, _)| {
 
-            let column_enum_name = format_ident!("{}", ident.to_string().to_upper_camel_case());
+            let column_name = format_ident!("{}", ident_proc.to_string().to_snake_case());
+
+            let column_enum_name = format_ident!("{}", ident_proc.to_string().to_upper_camel_case());
+
+            let mut is_string = false;
+
+            if let syn::Type::Path(syn::TypePath{ qself: _, path}) = ident_type {
+                let syn::Path{ leading_colon: _, segments } = path;
+                let syn::PathSegment{ ident, arguments: _ } = &segments[0];
+                if ident.to_string() == "String".to_owned() {
+                    is_string = true;
+                }
+            }
+            let mut foobar = TokenStream::new();
+
+            if is_string == true {
+                foobar = quote!{
+                    if let Some(eq_value) = &#column_name.like {
+                        condition = condition.add(Column::#column_enum_name.like(eq_value))
+                    }
+                };
+            }
 
             quote!{
                 if let Some(#column_name) = current_filter.#column_name {
+                    #foobar
+
                     if let Some(eq_value) = #column_name.eq {
                         condition = condition.add(Column::#column_enum_name.eq(eq_value))
                     }
@@ -277,17 +303,22 @@ pub fn recursive_filter_fn(fields: &[IdentTypeTuple]) -> Result<TokenStream, cra
     })
 }
 
-pub fn remove_optional_from_type(ty: syn::Type) -> Result<syn::Type, crate::error::Error> {
-    fn path_is_option(path: &syn::Path) -> bool {
-        path.leading_colon.is_none()
-            && path.segments.len() == 1
-            && path.segments.iter().next().unwrap().ident == "Option"
-    }
+fn path_is_option(path: &syn::Path) -> bool {
+    path.leading_colon.is_none()
+        && path.segments.len() == 1
+        && path.segments.iter().next().unwrap().ident == "Option"
+}
+
+pub fn remove_optional_from_type_and_get_is_option(
+    ty: syn::Type,
+) -> Result<(syn::Type, bool), crate::error::Error> {
+    let mut is_option = false;
 
     let ty = match ty {
         syn::Type::Path(type_path)
             if type_path.qself.is_none() && path_is_option(&type_path.path) =>
         {
+            is_option = path_is_option(&type_path.path);
             let type_params = &type_path.path.segments.first().unwrap().arguments;
             let generic_arg = match type_params {
                 syn::PathArguments::AngleBracketed(params) => params.args.first().unwrap(),
@@ -305,5 +336,5 @@ pub fn remove_optional_from_type(ty: syn::Type) -> Result<syn::Type, crate::erro
         _ => ty,
     };
 
-    Ok(ty)
+    Ok((ty, is_option))
 }

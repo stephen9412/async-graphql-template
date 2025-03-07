@@ -1,6 +1,9 @@
+# Derived from Seaography (github.com/SeaQL/seaography)
+# Modifications Copyright (c) 2025 Stephen J. Li
+
 [package]
-name = "seaography-derive"
-version = "0.2.0"
+name = "async-graphql-template-derive"
+version = "0.3.0"
 edition = "2021"
 rust-version = "1.60"
 authors = ["Panagiotis Karatakis <panagiotiskaratakis@gmail.com>"]

@@ -1,3 +1,6 @@
+// Derived from Seaography (github.com/SeaQL/seaography)
+// Modifications Copyright (c) 2025 Stephen J. Li
+
 //! <div align="center">
 //!
 //!   <h1>
@@ -130,10 +133,10 @@
 
 use std::{fmt::Debug, str::FromStr};
 
+pub use async_graphql_template_derive as macros;
 pub use heck;
 pub use itertools;
 use itertools::Itertools;
-pub use seaography_derive as macros;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, async_graphql::Enum)]
 pub enum OrderByEnum {
@@ -144,7 +147,6 @@ pub enum OrderByEnum {
 pub type BinaryVector = Vec<u8>;
 
 #[derive(Debug, Clone, async_graphql::InputObject)]
-#[graphql(concrete(name = "StringFilter", params(String)))]
 #[graphql(concrete(name = "TinyIntegerFilter", params(i8)))]
 #[graphql(concrete(name = "SmallIntegerFilter", params(i16)))]
 #[graphql(concrete(name = "IntegerFilter", params(i32)))]
@@ -193,6 +195,21 @@ pub type BinaryVector = Vec<u8>;
 #[graphql(concrete(name = "BinaryFilter", params(BinaryVector)))]
 #[graphql(concrete(name = "BooleanFilter", params(bool)))]
 pub struct TypeFilter<T: async_graphql::InputType> {
+    pub eq: Option<T>,
+    pub ne: Option<T>,
+    pub gt: Option<T>,
+    pub gte: Option<T>,
+    pub lt: Option<T>,
+    pub lte: Option<T>,
+    pub is_in: Option<Vec<T>>,
+    pub is_not_in: Option<Vec<T>>,
+    pub is_null: Option<bool>,
+}
+
+#[derive(Debug, Clone, async_graphql::InputObject)]
+#[graphql(concrete(name = "StringFilter", params(String)))]
+pub struct StringFilter<T: async_graphql::InputType> {
+    pub like: Option<T>,
     pub eq: Option<T>,
     pub ne: Option<T>,
     pub gt: Option<T>,
