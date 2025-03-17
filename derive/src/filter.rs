@@ -42,6 +42,19 @@ pub fn filter_fn(item: syn::DataStruct, attrs: SeaOrm) -> Result<TokenStream, cr
     })
 }
 
+pub fn is_vec_type(ty: &syn::Type) -> bool {
+    if let syn::Type::Path(type_path) = ty {
+        type_path
+            .path
+            .segments
+            .last()
+            .map(|seg| seg.ident == "Vec")
+            .unwrap_or(false)
+    } else {
+        false
+    }
+}
+
 pub fn filter_struct(
     fields: &[IdentTypeTuple],
     attrs: &SeaOrm,
@@ -80,9 +93,61 @@ pub fn filter_struct(
                 "bool",
             ];
 
-            let filter_item = if default_filters.contains(&type_literal.as_str())
-                || type_literal.starts_with("Vec")
-            {
+            let filter_item = if is_vec_type(ty) {
+                if type_literal.contains("String") {
+                    quote! {
+                        async_graphql_template::StringArrayFilter
+                    }
+                } else if type_literal.contains("i8") {
+                    quote! {
+                        async_graphql_template::TinyIntArrayFilter
+                    }
+                } else if type_literal.contains("i16") {
+                    quote! {
+                        async_graphql_template::SmallIntArrayFilter
+                    }
+                } else if type_literal.contains("i32") {
+                    quote! {
+                        async_graphql_template::IntArrayFilter
+                    }
+                } else if type_literal.contains("i64") {
+                    quote! {
+                        async_graphql_template::BigIntArrayFilter
+                    }
+                } else if type_literal.contains("u8") {
+                    quote! {
+                        async_graphql_template::TinyUnsignedArrayFilter
+                    }
+                } else if type_literal.contains("u16") {
+                    quote! {
+                        async_graphql_template::SmallUnsignedArrayFilter
+                    }
+                } else if type_literal.contains("u32") {
+                    quote! {
+                        async_graphql_template::UnsignedArrayFilter
+                    }
+                } else if type_literal.contains("u64") {
+                    quote! {
+                        async_graphql_template::BigUnsignedArrayFilter
+                    }
+                } else if type_literal.contains("f32") {
+                    quote! {
+                        async_graphql_template::FloatArrayFilter
+                    }
+                } else if type_literal.contains("f64") {
+                    quote! {
+                        async_graphql_template::DoubleArrayFilter
+                    }
+                } else if type_literal.contains("bool") {
+                    quote! {
+                        async_graphql_template::BooleanArrayFilter
+                    }
+                } else {
+                    quote! {
+                        async_graphql_template::IntArrayFilter
+                    }
+                }
+            } else if default_filters.contains(&type_literal.as_str()) {
                 quote! {
                     async_graphql_template::TypeFilter<#ty>
                 }
@@ -202,10 +267,10 @@ pub fn recursive_filter_fn(fields: &[IdentTypeTuple]) -> Result<TokenStream, cra
         .map(|(ident_proc, ident_type, _)| {
 
             let column_name = format_ident!("{}", ident_proc.to_string().to_snake_case());
-
             let column_enum_name = format_ident!("{}", ident_proc.to_string().to_upper_camel_case());
 
             let mut is_string = false;
+            let is_vec = is_vec_type(ident_type);
 
             if let syn::Type::Path(syn::TypePath{ qself: _, path}) = ident_type {
                 let syn::Path{ leading_colon: _, segments } = path;
@@ -214,55 +279,158 @@ pub fn recursive_filter_fn(fields: &[IdentTypeTuple]) -> Result<TokenStream, cra
                     is_string = true;
                 }
             }
-            let mut foobar = TokenStream::new();
 
-            if is_string == true {
-                foobar = quote!{
+            let mut string_filter = TokenStream::new();
+            let mut array_filter = TokenStream::new();
+
+            if is_string {
+                string_filter = quote!{
                     if let Some(eq_value) = &#column_name.like {
                         condition = condition.add(Column::#column_enum_name.like(eq_value))
                     }
                 };
             }
 
-            quote!{
-                if let Some(#column_name) = current_filter.#column_name {
-                    #foobar
-
-                    if let Some(eq_value) = #column_name.eq {
-                        condition = condition.add(Column::#column_enum_name.eq(eq_value))
+            if is_vec {
+                array_filter = quote!{
+                    if let Some(contains) = &#column_name.contains {
+                        // 使用 sea_orm 提供的 contains 函數進行數組包含檢查
+                        let mut contains_condition = sea_orm::Condition::all();
+                        for item in contains.iter() {
+                            contains_condition = contains_condition.add(
+                                sea_orm::sea_query::extension::postgres::PgExpr::contains(
+                                    sea_orm::sea_query::Expr::col(Column::#column_enum_name), 
+                                    item.clone()
+                                )
+                            );
+                        }
+                        condition = condition.add(contains_condition);
                     }
-
-                    if let Some(ne_value) = #column_name.ne {
-                        condition = condition.add(Column::#column_enum_name.ne(ne_value))
+                    
+                    if let Some(contains_any) = &#column_name.contains_any {
+                        // 使用 OR 條件構建 ANY 語義
+                        let mut any_condition = sea_orm::Condition::any();
+                        for item in contains_any.iter() {
+                            any_condition = any_condition.add(
+                                sea_orm::sea_query::extension::postgres::PgExpr::contains(
+                                    sea_orm::sea_query::Expr::col(Column::#column_enum_name), 
+                                    item.clone()
+                                )
+                            );
+                        }
+                        condition = condition.add(any_condition);
                     }
+                };
+            }
 
-                    if let Some(gt_value) = #column_name.gt {
-                        condition = condition.add(Column::#column_enum_name.gt(gt_value))
+            // 根據類型不同選擇不同的過濾邏輯
+            if is_vec {
+                // 數組類型僅使用數組專用過濾條件
+                quote!{
+                    if let Some(#column_name) = current_filter.#column_name {
+                        #array_filter
+
+                        // 標準條件也適用於數組
+                        if let Some(eq_value) = #column_name.eq {
+                            condition = condition.add(Column::#column_enum_name.eq(eq_value))
+                        }
+
+                        if let Some(ne_value) = #column_name.ne {
+                            condition = condition.add(Column::#column_enum_name.ne(ne_value))
+                        }
+
+                        if let Some(is_null_value) = #column_name.is_null {
+                            if is_null_value {
+                                condition = condition.add(Column::#column_enum_name.is_null())
+                            }
+                        }
                     }
+                }
+            } else if is_string {
+                // 字符串類型使用字符串專用過濾條件
+                quote!{
+                    if let Some(#column_name) = current_filter.#column_name {
+                        #string_filter
 
-                    if let Some(gte_value) = #column_name.gte {
-                        condition = condition.add(Column::#column_enum_name.gte(gte_value))
+                        if let Some(eq_value) = #column_name.eq {
+                            condition = condition.add(Column::#column_enum_name.eq(eq_value))
+                        }
+
+                        if let Some(ne_value) = #column_name.ne {
+                            condition = condition.add(Column::#column_enum_name.ne(ne_value))
+                        }
+
+                        if let Some(gt_value) = #column_name.gt {
+                            condition = condition.add(Column::#column_enum_name.gt(gt_value))
+                        }
+
+                        if let Some(gte_value) = #column_name.gte {
+                            condition = condition.add(Column::#column_enum_name.gte(gte_value))
+                        }
+
+                        if let Some(lt_value) = #column_name.lt {
+                            condition = condition.add(Column::#column_enum_name.lt(lt_value))
+                        }
+
+                        if let Some(lte_value) = #column_name.lte {
+                            condition = condition.add(Column::#column_enum_name.lte(lte_value))
+                        }
+
+                        if let Some(is_in_value) = #column_name.is_in {
+                            condition = condition.add(Column::#column_enum_name.is_in(is_in_value))
+                        }
+
+                        if let Some(is_not_in_value) = #column_name.is_not_in {
+                            condition = condition.add(Column::#column_enum_name.is_not_in(is_not_in_value))
+                        }
+
+                        if let Some(is_null_value) = #column_name.is_null {
+                            if is_null_value {
+                                condition = condition.add(Column::#column_enum_name.is_null())
+                            }
+                        }
                     }
+                }
+            } else {
+                // 其他一般類型使用標準過濾條件
+                quote!{
+                    if let Some(#column_name) = current_filter.#column_name {
+                        if let Some(eq_value) = #column_name.eq {
+                            condition = condition.add(Column::#column_enum_name.eq(eq_value))
+                        }
 
-                    if let Some(lt_value) = #column_name.lt {
-                        condition = condition.add(Column::#column_enum_name.lt(lt_value))
-                    }
+                        if let Some(ne_value) = #column_name.ne {
+                            condition = condition.add(Column::#column_enum_name.ne(ne_value))
+                        }
 
-                    if let Some(lte_value) = #column_name.lte {
-                        condition = condition.add(Column::#column_enum_name.lte(lte_value))
-                    }
+                        if let Some(gt_value) = #column_name.gt {
+                            condition = condition.add(Column::#column_enum_name.gt(gt_value))
+                        }
 
-                    if let Some(is_in_value) = #column_name.is_in {
-                        condition = condition.add(Column::#column_enum_name.is_in(is_in_value))
-                    }
+                        if let Some(gte_value) = #column_name.gte {
+                            condition = condition.add(Column::#column_enum_name.gte(gte_value))
+                        }
 
-                    if let Some(is_not_in_value) = #column_name.is_not_in {
-                        condition = condition.add(Column::#column_enum_name.is_not_in(is_not_in_value))
-                    }
+                        if let Some(lt_value) = #column_name.lt {
+                            condition = condition.add(Column::#column_enum_name.lt(lt_value))
+                        }
 
-                    if let Some(is_null_value) = #column_name.is_null {
-                        if is_null_value {
-                            condition = condition.add(Column::#column_enum_name.is_null())
+                        if let Some(lte_value) = #column_name.lte {
+                            condition = condition.add(Column::#column_enum_name.lte(lte_value))
+                        }
+
+                        if let Some(is_in_value) = #column_name.is_in {
+                            condition = condition.add(Column::#column_enum_name.is_in(is_in_value))
+                        }
+
+                        if let Some(is_not_in_value) = #column_name.is_not_in {
+                            condition = condition.add(Column::#column_enum_name.is_not_in(is_not_in_value))
+                        }
+
+                        if let Some(is_null_value) = #column_name.is_null {
+                            if is_null_value {
+                                condition = condition.add(Column::#column_enum_name.is_null())
+                            }
                         }
                     }
                 }
@@ -272,6 +440,7 @@ pub fn recursive_filter_fn(fields: &[IdentTypeTuple]) -> Result<TokenStream, cra
 
     Ok(quote! {
         pub fn filter_recursive(root_filter: Option<Filter>) -> sea_orm::Condition {
+            use sea_orm::sea_query::extension::postgres::PgExpr;
             let mut condition = sea_orm::Condition::all();
 
             if let Some(current_filter) = root_filter {

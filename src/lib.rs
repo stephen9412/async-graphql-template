@@ -138,6 +138,10 @@ pub use heck;
 pub use itertools;
 use itertools::Itertools;
 
+// 引入數組過濾器模塊
+mod array_filter;
+pub use array_filter::*;
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq, async_graphql::Enum)]
 pub enum OrderByEnum {
     Asc,
@@ -516,10 +520,7 @@ impl async_graphql::types::connection::CursorType for CursorValues {
                     }
                     _ => {
                         // FIXME: missing value types
-                        panic!(
-                            "cannot
-                             current type"
-                        )
+                        panic!("cannot encode current type")
                     }
                 }
             })

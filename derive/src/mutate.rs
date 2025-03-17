@@ -5,6 +5,20 @@ use heck::{ToSnakeCase, ToUpperCamelCase};
 use proc_macro2::TokenStream;
 use quote::{format_ident, quote, ToTokens};
 
+// 檢查類型是否是 Vec 類型
+pub fn is_vec_type(ty: &syn::Type) -> bool {
+    if let syn::Type::Path(type_path) = ty {
+        type_path
+            .path
+            .segments
+            .last()
+            .map(|seg| seg.ident == "Vec")
+            .unwrap_or(false)
+    } else {
+        false
+    }
+}
+
 #[derive(Debug, Eq, PartialEq, bae::FromAttributes)]
 pub struct SeaOrm {
     table_name: Option<syn::Lit>,
@@ -40,6 +54,7 @@ pub fn mutant_struct(
         .iter()
         .map(|(ident, ty, _)| {
             let type_literal = ty.to_token_stream().to_string();
+            let is_vec = is_vec_type(ty);
 
             let default_filters = vec![
                 "bool",
@@ -64,9 +79,17 @@ pub fn mutant_struct(
                 "String",
                 "TaxType",
                 "Uuid",
+                "TaskStatus",
+                "TaskPriority",
+                "EnergyLevel",
             ];
 
-            let filter_item = if default_filters.contains(&type_literal.as_str()) {
+            // 如果是 Vec 類型，直接使用原始類型
+            let filter_item = if is_vec {
+                quote! {
+                    #ty
+                }
+            } else if default_filters.contains(&type_literal.as_str()) {
                 quote! {
                     #ty
                 }
@@ -115,9 +138,10 @@ pub fn mutant_struct(
 pub fn recursive_set_fn(fields: &[IdentTypeTuple]) -> Result<TokenStream, crate::error::Error> {
     let columns_filters: Vec<TokenStream> = fields
         .iter()
-        .map(|(ident, _, is_option)| {
+        .map(|(ident, ty, is_option)| {
             let column_name = format_ident!("{}", ident.to_string().to_snake_case());
             let _column_enum_name = format_ident!("{}", ident.to_string().to_upper_camel_case());
+            let is_vec = is_vec_type(ty);
 
             let ignore_fields = vec![
                 "id".to_owned(),
@@ -131,6 +155,14 @@ pub fn recursive_set_fn(fields: &[IdentTypeTuple]) -> Result<TokenStream, crate:
             } else if must_have.contains(&column_name.to_string()) {
                 quote! {
                     self.#column_name = Set(mutant.#column_name);
+                }
+            } else if is_vec {
+                // 對於 Vec 類型，直接將整個數組設置為新值，覆蓋舊的值
+                quote! {
+                    if let Some(value) = mutant.#column_name {
+                        // 直接將 Vec 作為整體設置，覆蓋舊值
+                        self.#column_name = Set(value);
+                    }
                 }
             } else if is_option == &true {
                 quote! {
