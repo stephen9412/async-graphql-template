@@ -299,21 +299,21 @@ pub fn recursive_filter_fn(fields: &[IdentTypeTuple]) -> Result<TokenStream, cra
                         for item in contains.iter() {
                             contains_condition = contains_condition.add(
                                 sea_orm::sea_query::extension::postgres::PgExpr::contains(
-                                    sea_orm::sea_query::Expr::col(Column::#column_enum_name), 
+                                    sea_orm::sea_query::Expr::col(Column::#column_enum_name),
                                     item.clone()
                                 )
                             );
                         }
                         condition = condition.add(contains_condition);
                     }
-                    
+
                     if let Some(contains_any) = &#column_name.contains_any {
                         // 使用 OR 條件構建 ANY 語義
                         let mut any_condition = sea_orm::Condition::any();
                         for item in contains_any.iter() {
                             any_condition = any_condition.add(
                                 sea_orm::sea_query::extension::postgres::PgExpr::contains(
-                                    sea_orm::sea_query::Expr::col(Column::#column_enum_name), 
+                                    sea_orm::sea_query::Expr::col(Column::#column_enum_name),
                                     item.clone()
                                 )
                             );

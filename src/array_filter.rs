@@ -2,7 +2,7 @@
 // Modifications Copyright (c) 2025 Stephen J. Li
 
 /// 整數數組過濾器
-/// 
+///
 /// 用於支持對 Vec<i32> 類型的數據進行高級過濾操作
 #[derive(Debug, Clone, async_graphql::InputObject)]
 pub struct IntArrayFilter {
@@ -11,7 +11,7 @@ pub struct IntArrayFilter {
     /// 不等於數組
     pub ne: Option<Vec<i32>>,
     pub is_null: Option<bool>,
-    
+
     /// 包含所有指定元素（PostgreSQL @>）
     pub contains: Option<Vec<i32>>,
     /// 包含任意指定元素（PostgreSQL &&）
@@ -19,7 +19,7 @@ pub struct IntArrayFilter {
 }
 
 /// 字符串數組過濾器
-/// 
+///
 /// 用於支持對 Vec<String> 類型的數據進行高級過濾操作
 #[derive(Debug, Clone, async_graphql::InputObject)]
 pub struct StringArrayFilter {
@@ -28,7 +28,7 @@ pub struct StringArrayFilter {
     /// 不等於數組
     pub ne: Option<Vec<String>>,
     pub is_null: Option<bool>,
-    
+
     /// 包含所有指定元素（PostgreSQL @>）
     pub contains: Option<Vec<String>>,
     /// 包含任意指定元素（PostgreSQL &&）
