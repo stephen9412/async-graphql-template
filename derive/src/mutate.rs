@@ -82,6 +82,7 @@ pub fn mutant_struct(
                 "TaskStatus",
                 "TaskPriority",
                 "EnergyLevel",
+                "TagType",
             ];
 
             // 如果是 Vec 類型，直接使用原始類型
