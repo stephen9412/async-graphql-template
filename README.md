@@ -173,3 +173,16 @@ Modifications:
   Copyright (c) 2025 Stephen J. Li  
   Includes: GraphQL federation, connection pooling optimization  
 ```
+
+## 使用 cline 修改的 Prompt
+
+```text
+幫我增加 @/async-graphql-template/derive/src/filter.rs 對 Vec 的支持，ArrayFilter 要寫在 @/async-graphql-template/src/lib.rs，建議文檔如下
+
+```
+
+```text
+幫我依照 filter 的範例在 @/async-graphql-template/derive/src/filter.rs
+修改 @/async-graphql-template/derive/src/mutate.rs
+改成可以接受 Vec 開頭的輸入，並且要設定方式就是把輸入的 vec 整個 set 舊的資料上，把舊的資料覆蓋掉
+```
